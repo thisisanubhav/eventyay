@@ -1,0 +1,120 @@
+[
+  {
+    "revision": "bfda66330951edbe5a59181d9818744c1f14aa42",
+    "label": "before",
+    "action": "issue",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "25.00",
+    "cards": 1,
+    "ledger": [
+      "25.00"
+    ],
+    "status": "p"
+  },
+  {
+    "revision": "bfda66330951edbe5a59181d9818744c1f14aa42",
+    "label": "before",
+    "action": "replay",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "25.00",
+    "cards": 1,
+    "ledger": [
+      "25.00"
+    ],
+    "status": "p"
+  },
+  {
+    "revision": "bfda66330951edbe5a59181d9818744c1f14aa42",
+    "label": "before",
+    "action": "cancel",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "0.00",
+    "cards": 1,
+    "ledger": [
+      "25.00",
+      "-25.00"
+    ],
+    "status": "c"
+  },
+  {
+    "revision": "bfda66330951edbe5a59181d9818744c1f14aa42",
+    "label": "before",
+    "action": "reactivate",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "25.00",
+    "cards": 1,
+    "ledger": [
+      "25.00",
+      "-25.00",
+      "25.00"
+    ],
+    "status": "p"
+  },
+  {
+    "revision": "ba7b868678244cdb1e62529b7d4a53eb597111e3",
+    "label": "after",
+    "action": "issue",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "50.00",
+    "cards": 1,
+    "ledger": [
+      "50.00"
+    ],
+    "status": "p"
+  },
+  {
+    "revision": "ba7b868678244cdb1e62529b7d4a53eb597111e3",
+    "label": "after",
+    "action": "replay",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "50.00",
+    "cards": 1,
+    "ledger": [
+      "50.00"
+    ],
+    "status": "p"
+  },
+  {
+    "revision": "ba7b868678244cdb1e62529b7d4a53eb597111e3",
+    "label": "after",
+    "action": "cancel",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "0.00",
+    "cards": 1,
+    "ledger": [
+      "50.00",
+      "-50.00"
+    ],
+    "status": "c"
+  },
+  {
+    "revision": "ba7b868678244cdb1e62529b7d4a53eb597111e3",
+    "label": "after",
+    "action": "reactivate",
+    "face": "50.00",
+    "paid": "25",
+    "total": "25.00",
+    "balance": "50.00",
+    "cards": 1,
+    "ledger": [
+      "50.00",
+      "-50.00",
+      "50.00"
+    ],
+    "status": "p"
+  }
+]
