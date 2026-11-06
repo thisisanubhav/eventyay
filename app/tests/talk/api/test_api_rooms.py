@@ -1,10 +1,13 @@
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import dateutil.parser
 import pytest
+from django.utils import timezone
 from django_scopes import scope
 
+from eventyay.api.serializers.availability import AvailabilitySerializer
 from eventyay.api.serializers.room import RoomOrgaSerializer, RoomSerializer
 from eventyay.api.versions import LEGACY
 
@@ -330,6 +333,97 @@ def test_orga_can_update_room_availabilities(client, orga_user_write_token, room
         assert room.availabilities.count() == 1
         assert room.availabilities.first().start == start2
         assert room.availabilities.first().end == end2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "duration",
+    (timedelta(hours=-1), timedelta(0)),
+    ids=("end_before_start", "zero_length"),
+)
+def test_room_availability_must_end_after_start(
+    client, orga_user_write_token, room, duration
+):
+    event = room.event
+    start = datetime.combine(event.date_from, datetime.min.time()).replace(
+        tzinfo=event.tz
+    )
+    end = start + timedelta(hours=2)
+    url = event.api_urls.rooms + f"{room.pk}/"
+    headers = {"Authorization": f"Token {orga_user_write_token.token}"}
+
+    response = client.patch(
+        url,
+        data=json.dumps(
+            {"availabilities": [{"start": start.isoformat(), "end": end.isoformat()}]}
+        ),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    invalid_start = start + timedelta(hours=1)
+    response = client.patch(
+        url,
+        data=json.dumps(
+            {
+                "availabilities": [
+                    {
+                        "start": invalid_start.isoformat(),
+                        "end": (invalid_start + duration).isoformat(),
+                    }
+                ]
+            }
+        ),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert response.status_code == 400
+
+    with scope(event=event):
+        assert [(item.start, item.end) for item in room.availabilities.all()] == [
+            (start, end)
+        ]
+
+
+@pytest.mark.django_db
+def test_room_availability_requires_both_endpoints(
+    client, orga_user_write_token, room
+):
+    event = room.event
+    start = datetime.combine(event.date_from, datetime.min.time()).replace(
+        tzinfo=event.tz
+    )
+
+    response = client.patch(
+        event.api_urls.rooms + f"{room.pk}/",
+        data=json.dumps(
+            {
+                "name": {"en": "Changed room"},
+                "availabilities": [{"start": start.isoformat()}],
+            }
+        ),
+        content_type="application/json",
+        headers={"Authorization": f"Token {orga_user_write_token.token}"},
+    )
+
+    assert response.status_code == 400
+    with scope(event=event):
+        room.refresh_from_db()
+        assert str(room.name) == "Testroom"
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "valid"),
+    (
+        ("2026-11-01T01:45:00-04:00", "2026-11-01T01:15:00-05:00", True),
+        ("2026-11-01T01:15:00-05:00", "2026-11-01T01:45:00-04:00", False),
+    ),
+)
+def test_availability_order_uses_absolute_time(start, end, valid):
+    with timezone.override(ZoneInfo("America/New_York")):
+        serializer = AvailabilitySerializer(data={"start": start, "end": end})
+        assert serializer.is_valid() is valid
 
 
 @pytest.mark.django_db

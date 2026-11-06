@@ -1,5 +1,8 @@
+from datetime import UTC
+
 from django.db import transaction
-from rest_framework.serializers import BooleanField, ModelSerializer
+from django.utils.translation import gettext_lazy as _
+from rest_framework.serializers import BooleanField, ModelSerializer, ValidationError
 
 from eventyay.base.models.availability import Availability
 
@@ -14,6 +17,20 @@ class AvailabilitySerializer(ModelSerializer):
     class Meta:
         model = Availability
         fields = ("start", "end", "allDay")
+
+    def validate(self, data):
+        missing = {
+            field: self.fields[field].error_messages["required"]
+            for field in ("start", "end")
+            if field not in data
+        }
+        if missing:
+            raise ValidationError(missing)
+        if data["end"].astimezone(UTC) <= data["start"].astimezone(UTC):
+            raise ValidationError(
+                {"end": _("The end of an availability must be after its start.")}
+            )
+        return data
 
 
 class AvailabilitiesMixin:
