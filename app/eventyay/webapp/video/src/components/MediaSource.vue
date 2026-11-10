@@ -44,7 +44,8 @@ import { useStore } from 'vuex';
 import { isEqual } from 'lodash';
 import api from 'lib/api';
 import {logOperational} from 'lib/operationalLog';
-import { normalizeYoutubeVideoId } from 'lib/validators';
+import { TtsAudioPlayer } from 'lib/tts-audio-player';
+import { normalizeAudioTranslationSource, normalizeYoutubeVideoId } from 'lib/validators';
 import { isDomainBlocked, getUrlDomain } from 'lib/iframeConsent';
 import IframeBlocker from 'components/IframeBlocker';
 import { WhepClient } from 'lib/webrtc/whep';
@@ -57,6 +58,7 @@ import {
 } from 'lib/stage-streams';
 import { getVimeoEmbedUrl, parseVimeoUrl } from 'lib/vimeo';
 import { isRoomVisibleToAttendee } from 'lib/video-providers';
+import { interpretationAudioSource } from '../interpretation-streams.js';
 
 const PLAYER_LOAD_ATTEMPTS = 3
 const retryVideoPlayerKey = Symbol('retryVideoPlayer')
@@ -128,6 +130,7 @@ let iframeInitInProgress = false;
 const whepAudioEl = ref(null);
 const translationIframeEl = ref(null);
 let whepClient = null;
+let ttsAudioPlayer = null;
 
 // Template refs
 const livestream = ref(null);
@@ -150,6 +153,7 @@ function applyInterpretationVolume(vol) {
 	if (whepAudioEl.value) {
 		whepAudioEl.value.volume = safe;
 	}
+	ttsAudioPlayer?.setVolume(safe);
 	const iframe = translationIframeEl.value;
 	if (iframe?.contentWindow) {
 		try {
@@ -369,9 +373,11 @@ async function applyInterpretation(interpConfig) {
 
 	const updateToken = ++interpretationUpdateToken;
 	disconnectWhepTranslation();
+	disconnectTtsTranslation();
 
-	const audioSource = interpConfig?.url || interpConfig?.youtube_id || null;
-	const requestedUseVideo = interpConfig?.useVideo || false;
+	const ttsSource = normalizeAudioTranslationSource(interpConfig?.tts_ws_url);
+	const audioSource = interpretationAudioSource(interpConfig);
+	const requestedUseVideo = interpConfig?.useVideo ?? interpConfig?.use_video ?? false;
 	const translationVideoId = audioSource ? normalizeYoutubeVideoId(audioSource) : null;
 	const useVideo = requestedUseVideo && !!translationVideoId;
 
@@ -382,15 +388,38 @@ async function applyInterpretation(interpConfig) {
 		languageIframeUrl.value = null; // Clear any audio iframe
 		destroyIframe();
 		await initializeIframe(false);
+		if (updateToken !== interpretationUpdateToken) return;
 		return;
 	} else if (isPlayingTranslationVideo.value) {
 		isPlayingTranslationVideo.value = false;
 		activeTranslationVideoId.value = null;
 		destroyIframe();
 		await initializeIframe(false);
+		if (updateToken !== interpretationUpdateToken) return;
 	}
 
-	if (audioSource) {
+	if (ttsSource) {
+		languageIframeUrl.value = null;
+		let player = null;
+		try {
+			player = new TtsAudioPlayer(ttsSource);
+			ttsAudioPlayer = player;
+			player.setVolume(interpretationVolume.value);
+			player.connect();
+			if (updateToken !== interpretationUpdateToken) {
+				player.disconnect();
+				if (ttsAudioPlayer === player) ttsAudioPlayer = null;
+				return;
+			}
+			if (mainPlayerPaused.value) player.pause();
+			else player.resume();
+			muteMainPlayer();
+		} catch (error) {
+			console.error('Failed to connect to TTS interpretation source', error);
+			player?.disconnect();
+			if (ttsAudioPlayer === player) ttsAudioPlayer = null;
+		}
+	} else if (audioSource) {
 		let isWhep = false;
 		try {
 			new URL(audioSource);
@@ -412,6 +441,7 @@ async function applyInterpretation(interpConfig) {
 				if (updateToken !== interpretationUpdateToken) {
 					client.disconnect();
 					if (whepClient === client) whepClient = null;
+					return;
 				} else if (!mainPlayerPaused.value) {
 					// Autoplay often fails for async srcObject assignments. Force play.
 					resumeTranslationAudio();
@@ -420,6 +450,7 @@ async function applyInterpretation(interpConfig) {
 				console.error('Failed to connect to WHEP interpretation source', err);
 				client.disconnect();
 				if (whepClient === client) whepClient = null;
+				return;
 			}
 		} else {
 			// Create hidden interpretation audio iframe for YouTube audio translation
@@ -463,6 +494,7 @@ onBeforeUnmount(() => {
 	if (whepClient) {
 		disconnectWhepTranslation();
 	}
+	disconnectTtsTranslation();
 	iframeEl.value?.remove();
 	if (api.socketState !== 'open') return;
 	// TODO move to store?
@@ -470,7 +502,7 @@ onBeforeUnmount(() => {
 });
 
 function hasAudioOnlyInterpretation() {
-	return Boolean(activeInterpretation.value?.url && !activeInterpretation.value?.useVideo);
+	return Boolean(interpretationAudioSource(activeInterpretation.value) && !activeInterpretation.value?.useVideo);
 }
 
 function muteMainPlayer() {
@@ -665,6 +697,12 @@ function disconnectWhepTranslation() {
 	whepClient = null;
 }
 
+function disconnectTtsTranslation() {
+	if (!ttsAudioPlayer) return;
+	ttsAudioPlayer.disconnect();
+	ttsAudioPlayer = null;
+}
+
 function unmuteYouTubePlayer() {
 	if (!iframeEl.value || !iframeEl.value.contentWindow) return;
 	try {
@@ -685,6 +723,7 @@ function pauseTranslationAudio() {
 	if (whepAudioEl.value && !whepAudioEl.value.paused) {
 		whepAudioEl.value.pause();
 	}
+	ttsAudioPlayer?.pause();
 	pauseYouTubeTranslationIframe();
 }
 
@@ -694,6 +733,7 @@ function resumeTranslationAudio() {
 			console.warn('Failed to resume WHEP interpretation audio:', e)
 		);
 	}
+	ttsAudioPlayer?.resume();
 	resumeYouTubeTranslationIframe();
 }
 
@@ -725,7 +765,7 @@ function resumeYouTubeTranslationIframe() {
 
 function onMainPlayerPlaybackChanged(isPlaying) {
 	mainPlayerPaused.value = !isPlaying;
-	if (!activeInterpretation.value?.url) return;
+	if (!interpretationAudioSource(activeInterpretation.value)) return;
 	if (isPlaying) {
 		resumeTranslationAudio();
 	} else {
@@ -933,8 +973,9 @@ async function initializeIframe(mute, skipConsentCheck = false) {
 			case 'livestream.youtube': {
 				isYouTube = true;
 				let ytid;
-				const translationVideoId = activeInterpretation.value?.useVideo && activeInterpretation.value?.url
-					? normalizeYoutubeVideoId(activeInterpretation.value.url)
+				const activeInterpretationSource = interpretationAudioSource(activeInterpretation.value);
+				const translationVideoId = activeInterpretation.value?.useVideo && activeInterpretationSource
+					? normalizeYoutubeVideoId(activeInterpretationSource)
 					: null;
 				if (translationVideoId) {
 					ytid = translationVideoId;
@@ -1058,6 +1099,7 @@ function destroyIframe() {
 	iframeEl.value = null;
 	languageIframeUrl.value = null;
 	disconnectWhepTranslation();
+	disconnectTtsTranslation();
 	consentBlockedUrl.value = null;
 }
 
