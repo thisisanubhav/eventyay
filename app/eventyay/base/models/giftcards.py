@@ -80,7 +80,25 @@ class GiftCard(LoggedModel):
 
     @property
     def value(self):
+        if 'transactions' in getattr(self, '_prefetched_objects_cache', {}):
+            return sum((entry.value for entry in self.transactions.all()), Decimal('0.00'))
         return self.transactions.aggregate(s=Sum('value'))['s'] or Decimal('0.00')
+
+    @property
+    def issued_value(self):
+        """Original credit, independent of subsequent redemption or cancellation."""
+        if 'transactions' in getattr(self, '_prefetched_objects_cache', {}):
+            initial = min(self.transactions.all(), key=lambda entry: (entry.datetime, entry.pk), default=None)
+        else:
+            initial = self.transactions.order_by('datetime', 'pk').first()
+        if initial is not None:
+            return initial.value
+        if self.issued_in_id:
+            position = self.issued_in
+            if position.price_before_voucher is not None:
+                return max(position.price, position.price_before_voucher)
+            return position.price
+        return Decimal('0.00')
 
     def accepted_by(self, organizer):
         return (
