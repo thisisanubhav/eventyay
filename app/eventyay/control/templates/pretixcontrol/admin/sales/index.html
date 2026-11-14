@@ -77,7 +77,7 @@
             {% endif %}
           </tr>
         {% empty %}
-          <tr><td colspan='{% if invoices %}9{% else %}7{% endif %}'>{% translate 'No results match your filters.' %}</td></tr>
+          <tr><td colspan='{% if invoices %}{{ columns|length|add:1 }}{% else %}{{ columns|length }}{% endif %}'>{% translate 'No results match your filters.' %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
